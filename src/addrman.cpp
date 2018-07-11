@@ -22,7 +22,7 @@ int CAddrInfo::GetTriedBucket(const uint256 &nKey) const {
 }
 
 int CAddrInfo::GetNewBucket(const uint256 &nKey, const CNetAddr &src) const {
-    std::vector<unsigned char> vchSourceGroupKey = src.GetGroup();
+    std::vector<uint8_t> vchSourceGroupKey = src.GetGroup();
     uint64_t hash1 =
         (CHashWriter(SER_GETHASH, 0) << nKey << GetGroup() << vchSourceGroupKey)
             .GetHash()
@@ -37,8 +37,8 @@ int CAddrInfo::GetNewBucket(const uint256 &nKey, const CNetAddr &src) const {
 
 int CAddrInfo::GetBucketPosition(const uint256 &nKey, bool fNew,
                                  int nBucket) const {
-    uint64_t hash1 = (CHashWriter(SER_GETHASH, 0) << nKey << (fNew ? 'N' : 'K')
-                                                  << nBucket << GetKey())
+    uint64_t hash1 = (CHashWriter(SER_GETHASH, 0)
+                      << nKey << (fNew ? 'N' : 'K') << nBucket << GetKey())
                          .GetHash()
                          .GetCheapHash();
     return hash1 % ADDRMAN_BUCKET_SIZE;
@@ -235,7 +235,7 @@ void CAddrMan::Good_(const CService &addr, int64_t nTime) {
     // TODO: maybe re-add the node, but for now, just bail out
     if (nUBucket == -1) return;
 
-    LogPrint("addrman", "Moving %s to tried\n", addr.ToString());
+    LogPrint(BCLog::ADDRMAN, "Moving %s to tried\n", addr.ToString());
 
     // move nId to the tried tables
     MakeTried(info, nId);
@@ -349,17 +349,22 @@ CAddrInfo CAddrMan::Select_(bool newOnly) {
             int nKBucket = RandomInt(ADDRMAN_TRIED_BUCKET_COUNT);
             int nKBucketPos = RandomInt(ADDRMAN_BUCKET_SIZE);
             while (vvTried[nKBucket][nKBucketPos] == -1) {
-                nKBucket = (nKBucket + insecure_rand.rand32()) %
-                           ADDRMAN_TRIED_BUCKET_COUNT;
-                nKBucketPos = (nKBucketPos + insecure_rand.rand32()) %
-                              ADDRMAN_BUCKET_SIZE;
+                nKBucket =
+                    (nKBucket +
+                     insecure_rand.randbits(ADDRMAN_TRIED_BUCKET_COUNT_LOG2)) %
+                    ADDRMAN_TRIED_BUCKET_COUNT;
+                nKBucketPos =
+                    (nKBucketPos +
+                     insecure_rand.randbits(ADDRMAN_BUCKET_SIZE_LOG2)) %
+                    ADDRMAN_BUCKET_SIZE;
             }
             int nId = vvTried[nKBucket][nKBucketPos];
             assert(mapInfo.count(nId) == 1);
             CAddrInfo &info = mapInfo[nId];
             if (RandomInt(1 << 30) <
-                fChanceFactor * info.GetChance() * (1 << 30))
+                fChanceFactor * info.GetChance() * (1 << 30)) {
                 return info;
+            }
             fChanceFactor *= 1.2;
         }
     } else {
@@ -369,10 +374,14 @@ CAddrInfo CAddrMan::Select_(bool newOnly) {
             int nUBucket = RandomInt(ADDRMAN_NEW_BUCKET_COUNT);
             int nUBucketPos = RandomInt(ADDRMAN_BUCKET_SIZE);
             while (vvNew[nUBucket][nUBucketPos] == -1) {
-                nUBucket = (nUBucket + insecure_rand.rand32()) %
-                           ADDRMAN_NEW_BUCKET_COUNT;
-                nUBucketPos = (nUBucketPos + insecure_rand.rand32()) %
-                              ADDRMAN_BUCKET_SIZE;
+                nUBucket =
+                    (nUBucket +
+                     insecure_rand.randbits(ADDRMAN_NEW_BUCKET_COUNT_LOG2)) %
+                    ADDRMAN_NEW_BUCKET_COUNT;
+                nUBucketPos =
+                    (nUBucketPos +
+                     insecure_rand.randbits(ADDRMAN_BUCKET_SIZE_LOG2)) %
+                    ADDRMAN_BUCKET_SIZE;
             }
             int nId = vvNew[nUBucket][nUBucketPos];
             assert(mapInfo.count(nId) == 1);

@@ -22,15 +22,11 @@ class CReserveKey;
 class CScript;
 class CWallet;
 
-namespace Consensus {
-struct Params;
-};
-
 static const bool DEFAULT_PRINTPRIORITY = false;
 
 struct CBlockTemplate {
     CBlock block;
-    std::vector<CAmount> vTxFees;
+    std::vector<Amount> vTxFees;
     std::vector<int64_t> vTxSigOpsCount;
 };
 
@@ -46,7 +42,7 @@ struct CTxMemPoolModifiedEntry {
 
     CTxMemPool::txiter iter;
     uint64_t nSizeWithAncestors;
-    CAmount nModFeesWithAncestors;
+    Amount nModFeesWithAncestors;
     int64_t nSigOpCountWithAncestors;
 };
 
@@ -75,9 +71,11 @@ struct modifiedentry_iter {
 // TODO: refactor to avoid duplication of this logic.
 struct CompareModifiedEntry {
     bool operator()(const CTxMemPoolModifiedEntry &a,
-                    const CTxMemPoolModifiedEntry &b) {
-        double f1 = (double)a.nModFeesWithAncestors * b.nSizeWithAncestors;
-        double f2 = (double)b.nModFeesWithAncestors * a.nSizeWithAncestors;
+                    const CTxMemPoolModifiedEntry &b) const {
+        double f1 = double(b.nSizeWithAncestors *
+                           a.nModFeesWithAncestors.GetSatoshis());
+        double f2 = double(a.nSizeWithAncestors *
+                           b.nModFeesWithAncestors.GetSatoshis());
         if (f1 == f2) {
             return CTxMemPool::CompareIteratorByHash()(a.iter, b.iter);
         }
@@ -89,7 +87,8 @@ struct CompareModifiedEntry {
 // This is sufficient to sort an ancestor package in an order that is valid
 // to appear in a block.
 struct CompareTxIterByAncestorCount {
-    bool operator()(const CTxMemPool::txiter &a, const CTxMemPool::txiter &b) {
+    bool operator()(const CTxMemPool::txiter &a,
+                    const CTxMemPool::txiter &b) const {
         if (a->GetCountWithAncestors() != b->GetCountWithAncestors())
             return a->GetCountWithAncestors() < b->GetCountWithAncestors();
         return CTxMemPool::CompareIteratorByHash()(a, b);
@@ -142,14 +141,12 @@ private:
     uint64_t nBlockSize;
     uint64_t nBlockTx;
     uint64_t nBlockSigOps;
-    CAmount nFees;
+    Amount nFees;
     CTxMemPool::setEntries inBlock;
 
     // Chain context for the block
     int nHeight;
-    int64_t nMedianTimePast;
     int64_t nLockTimeCutoff;
-    const CChainParams &chainparams;
 
     const Config *config;
 
@@ -158,7 +155,7 @@ private:
     bool blockFinished;
 
 public:
-    BlockAssembler(const Config &_config, const CChainParams &chainparams);
+    BlockAssembler(const Config &_config);
     /** Construct a new block template with coinbase to scriptPubKeyIn */
     std::unique_ptr<CBlockTemplate>
     CreateNewBlock(const CScript &scriptPubKeyIn);
@@ -176,8 +173,8 @@ private:
     /** Add transactions based on tx "priority" */
     void addPriorityTxs();
     /** Add transactions based on feerate including unconfirmed ancestors
-      * Increments nPackagesSelected / nDescendantsUpdated with corresponding
-      * statistics from the package selection (for logging statistics). */
+     * Increments nPackagesSelected / nDescendantsUpdated with corresponding
+     * statistics from the package selection (for logging statistics). */
     void addPackageTxs(int &nPackagesSelected, int &nDescendantsUpdated);
 
     // helper function for addPriorityTxs
@@ -192,12 +189,12 @@ private:
     /** Test if a new package would "fit" in the block */
     bool TestPackage(uint64_t packageSize, int64_t packageSigOpsCost);
     /** Perform checks on each transaction in a package:
-      * locktime, serialized size (if necessary)
-      * These checks should always succeed, and they're here
-      * only as an extra check in case of suboptimal node configuration */
+     * locktime, serialized size (if necessary)
+     * These checks should always succeed, and they're here
+     * only as an extra check in case of suboptimal node configuration */
     bool TestPackageTransactions(const CTxMemPool::setEntries &package);
     /** Return true if given transaction from mapTx has already been evaluated,
-      * or if the transaction's cached data in mapTx is incorrect. */
+     * or if the transaction's cached data in mapTx is incorrect. */
     bool SkipMapTxEntry(CTxMemPool::txiter it,
                         indexed_modified_transaction_set &mapModifiedTx,
                         CTxMemPool::setEntries &failedTx);
@@ -206,8 +203,8 @@ private:
                       CTxMemPool::txiter entry,
                       std::vector<CTxMemPool::txiter> &sortedEntries);
     /** Add descendants of given transactions to mapModifiedTx with ancestor
-      * state updated assuming given transactions are inBlock. Returns number
-      * of updated descendants. */
+     * state updated assuming given transactions are inBlock. Returns number
+     * of updated descendants. */
     int UpdatePackagesForAdded(const CTxMemPool::setEntries &alreadyAdded,
                                indexed_modified_transaction_set &mapModifiedTx);
 };
@@ -216,7 +213,6 @@ private:
 void IncrementExtraNonce(const Config &config, CBlock *pblock,
                          const CBlockIndex *pindexPrev,
                          unsigned int &nExtraNonce);
-int64_t UpdateTime(CBlockHeader *pblock,
-                   const Consensus::Params &consensusParams,
+int64_t UpdateTime(CBlockHeader *pblock, const Config &config,
                    const CBlockIndex *pindexPrev);
 #endif // BITCOIN_MINER_H

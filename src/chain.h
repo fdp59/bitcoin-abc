@@ -7,12 +7,28 @@
 #define BITCOIN_CHAIN_H
 
 #include "arith_uint256.h"
+#include "consensus/params.h"
 #include "pow.h"
 #include "primitives/block.h"
 #include "tinyformat.h"
 #include "uint256.h"
 
+#include <unordered_map>
 #include <vector>
+
+/**
+ * Maximum amount of time that a block timestamp is allowed to exceed the
+ * current network-adjusted time before the block will be accepted.
+ */
+static const int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
+
+/**
+ * Timestamp window used as a grace period by code that compares external
+ * timestamps (such as timestamps passed to RPCs, or wallet key creation times)
+ * to block timestamps. This should be set at least as high as
+ * MAX_FUTURE_BLOCK_TIME.
+ */
+static const int64_t TIMESTAMP_WINDOW = MAX_FUTURE_BLOCK_TIME;
 
 class CBlockFileInfo {
 public:
@@ -60,11 +76,19 @@ public:
 
     /** update statistics (does not update nSize) */
     void AddBlock(unsigned int nHeightIn, uint64_t nTimeIn) {
-        if (nBlocks == 0 || nHeightFirst > nHeightIn) nHeightFirst = nHeightIn;
-        if (nBlocks == 0 || nTimeFirst > nTimeIn) nTimeFirst = nTimeIn;
+        if (nBlocks == 0 || nHeightFirst > nHeightIn) {
+            nHeightFirst = nHeightIn;
+        }
+        if (nBlocks == 0 || nTimeFirst > nTimeIn) {
+            nTimeFirst = nTimeIn;
+        }
         nBlocks++;
-        if (nHeightIn > nHeightLast) nHeightLast = nHeightIn;
-        if (nTimeIn > nTimeLast) nTimeLast = nTimeIn;
+        if (nHeightIn > nHeightLast) {
+            nHeightLast = nHeightIn;
+        }
+        if (nTimeIn > nTimeLast) {
+            nTimeLast = nTimeIn;
+        }
     }
 };
 
@@ -200,18 +224,21 @@ public:
     unsigned int nChainTx;
 
     //! Verification status of this block. See enum BlockStatus
-    unsigned int nStatus;
+    uint32_t nStatus;
 
     //! block header
-    int nVersion;
+    int32_t nVersion;
     uint256 hashMerkleRoot;
-    unsigned int nTime;
+    uint32_t nTime;
     uint32_t nBits;
-    unsigned int nNonce;
+    uint32_t nNonce;
 
     //! (memory only) Sequential id assigned to distinguish order in which
     //! blocks are received.
     int32_t nSequenceId;
+
+    //! (memory only) block header metadata
+    uint64_t nTimeReceived;
 
     //! (memory only) Maximum nTime in the chain upto and including this block.
     unsigned int nTimeMax;
@@ -234,6 +261,7 @@ public:
         nVersion = 0;
         hashMerkleRoot = uint256();
         nTime = 0;
+        nTimeReceived = 0;
         nBits = 0;
         nNonce = 0;
     }
@@ -246,6 +274,11 @@ public:
         nVersion = block.nVersion;
         hashMerkleRoot = block.hashMerkleRoot;
         nTime = block.nTime;
+        // Default to block time if nTimeReceived is never set, which
+        // in effect assumes that this block is honestly mined.
+        // Note that nTimeReceived isn't written to disk, so blocks read from
+        // disk will be assumed to be honestly mined.
+        nTimeReceived = block.nTime;
         nBits = block.nBits;
         nNonce = block.nNonce;
     }
@@ -271,7 +304,9 @@ public:
     CBlockHeader GetBlockHeader() const {
         CBlockHeader block;
         block.nVersion = nVersion;
-        if (pprev) block.hashPrevBlock = pprev->GetBlockHash();
+        if (pprev) {
+            block.hashPrevBlock = pprev->GetBlockHash();
+        }
         block.hashMerkleRoot = hashMerkleRoot;
         block.nTime = nTime;
         block.nBits = nBits;
@@ -281,9 +316,11 @@ public:
 
     uint256 GetBlockHash() const { return *phashBlock; }
 
-    int64_t GetBlockTime() const { return (int64_t)nTime; }
+    int64_t GetBlockTime() const { return int64_t(nTime); }
 
-    int64_t GetBlockTimeMax() const { return (int64_t)nTimeMax; }
+    int64_t GetBlockTimeMax() const { return int64_t(nTimeMax); }
+
+    int64_t GetHeaderTimeReceived() const { return nTimeReceived; }
 
     enum { nMedianTimeSpan = 11 };
 
@@ -294,8 +331,9 @@ public:
 
         const CBlockIndex *pindex = this;
         for (int i = 0; i < nMedianTimeSpan && pindex;
-             i++, pindex = pindex->pprev)
+             i++, pindex = pindex->pprev) {
             *(--pbegin) = pindex->GetBlockTime();
+        }
 
         std::sort(pbegin, pend);
         return pbegin[(pend - pbegin) / 2];
@@ -312,7 +350,9 @@ public:
     bool IsValid(enum BlockStatus nUpTo = BLOCK_VALID_TRANSACTIONS) const {
         // Only validity flags allowed.
         assert(!(nUpTo & ~BLOCK_VALID_MASK));
-        if (nStatus & BLOCK_FAILED_MASK) return false;
+        if (nStatus & BLOCK_FAILED_MASK) {
+            return false;
+        }
         return ((nStatus & BLOCK_VALID_MASK) >= nUpTo);
     }
 
@@ -321,7 +361,9 @@ public:
     bool RaiseValidity(enum BlockStatus nUpTo) {
         // Only validity flags allowed.
         assert(!(nUpTo & ~BLOCK_VALID_MASK));
-        if (nStatus & BLOCK_FAILED_MASK) return false;
+        if (nStatus & BLOCK_FAILED_MASK) {
+            return false;
+        }
         if ((nStatus & BLOCK_VALID_MASK) < nUpTo) {
             nStatus = (nStatus & ~BLOCK_VALID_MASK) | nUpTo;
             return true;
@@ -337,14 +379,32 @@ public:
     const CBlockIndex *GetAncestor(int height) const;
 };
 
+/**
+ * Maintain a map of CBlockIndex for all known headers.
+ */
+struct BlockHasher {
+    size_t operator()(const uint256 &hash) const { return hash.GetCheapHash(); }
+};
+
+typedef std::unordered_map<uint256, CBlockIndex *, BlockHasher> BlockMap;
+extern BlockMap mapBlockIndex;
+
 arith_uint256 GetBlockProof(const CBlockIndex &block);
-/** Return the time it would take to redo the work difference between from and
+
+/**
+ * Return the time it would take to redo the work difference between from and
  * to, assuming the current hashrate corresponds to the difficulty at tip, in
- * seconds. */
+ * seconds.
+ */
 int64_t GetBlockProofEquivalentTime(const CBlockIndex &to,
                                     const CBlockIndex &from,
                                     const CBlockIndex &tip,
                                     const Consensus::Params &);
+/**
+ * Find the forking point between two chain tips.
+ */
+const CBlockIndex *LastCommonAncestor(const CBlockIndex *pa,
+                                      const CBlockIndex *pb);
 
 /** Used to marshal pointers into hashes for db storage. */
 class CDiskBlockIndex : public CBlockIndex {
@@ -362,15 +422,22 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream &s, Operation ser_action) {
         int nVersion = s.GetVersion();
-        if (!(s.GetType() & SER_GETHASH)) READWRITE(VARINT(nVersion));
+        if (!(s.GetType() & SER_GETHASH)) {
+            READWRITE(VARINT(nVersion));
+        }
 
         READWRITE(VARINT(nHeight));
         READWRITE(VARINT(nStatus));
         READWRITE(VARINT(nTx));
-        if (nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO))
+        if (nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO)) {
             READWRITE(VARINT(nFile));
-        if (nStatus & BLOCK_HAVE_DATA) READWRITE(VARINT(nDataPos));
-        if (nStatus & BLOCK_HAVE_UNDO) READWRITE(VARINT(nUndoPos));
+        }
+        if (nStatus & BLOCK_HAVE_DATA) {
+            READWRITE(VARINT(nDataPos));
+        }
+        if (nStatus & BLOCK_HAVE_UNDO) {
+            READWRITE(VARINT(nUndoPos));
+        }
 
         // block header
         READWRITE(this->nVersion);
@@ -401,7 +468,9 @@ public:
     }
 };
 
-/** An in-memory indexed chain of blocks. */
+/**
+ * An in-memory indexed chain of blocks.
+ */
 class CChain {
 private:
     std::vector<CBlockIndex *> vChain;
@@ -427,7 +496,9 @@ public:
      * if no such height exists.
      */
     CBlockIndex *operator[](int nHeight) const {
-        if (nHeight < 0 || nHeight >= (int)vChain.size()) return nullptr;
+        if (nHeight < 0 || nHeight >= (int)vChain.size()) {
+            return nullptr;
+        }
         return vChain[nHeight];
     }
 
@@ -447,10 +518,11 @@ public:
      * index is not found or is the tip.
      */
     CBlockIndex *Next(const CBlockIndex *pindex) const {
-        if (Contains(pindex))
-            return (*this)[pindex->nHeight + 1];
-        else
+        if (!Contains(pindex)) {
             return nullptr;
+        }
+
+        return (*this)[pindex->nHeight + 1];
     }
 
     /**

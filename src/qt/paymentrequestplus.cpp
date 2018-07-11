@@ -107,8 +107,7 @@ bool PaymentRequestPlus::getMerchant(X509_STORE *certStore,
             return false;
         }
 #endif
-        const unsigned char *data =
-            (const unsigned char *)certChain.certificate(i).data();
+        const uint8_t *data = (const uint8_t *)certChain.certificate(i).data();
         X509 *cert = d2i_X509(nullptr, &data, certChain.certificate(i).size());
         if (cert) certs.push_back(cert);
     }
@@ -151,8 +150,8 @@ bool PaymentRequestPlus::getMerchant(X509_STORE *certStore,
             // This option is just shown in the UI options, if -help-debug is
             // enabled.
             if (!(error == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT &&
-                  GetBoolArg("-allowselfsignedrootcertificates",
-                             DEFAULT_SELFSIGNED_ROOTCERTS))) {
+                  gArgs.GetBoolArg("-allowselfsignedrootcertificates",
+                                   DEFAULT_SELFSIGNED_ROOTCERTS))) {
                 throw SSLVerifyError(X509_verify_cert_error_string(error));
             } else {
                 qDebug() << "PaymentRequestPlus::getMerchant: Allowing self "
@@ -184,7 +183,7 @@ bool PaymentRequestPlus::getMerchant(X509_STORE *certStore,
             !EVP_VerifyUpdate(ctx, data_to_verify.data(),
                               data_to_verify.size()) ||
             !EVP_VerifyFinal(
-                ctx, (const unsigned char *)paymentRequest.signature().data(),
+                ctx, (const uint8_t *)paymentRequest.signature().data(),
                 (unsigned int)paymentRequest.signature().size(), pubkey)) {
             throw SSLVerifyError("Bad signature, invalid payment request.");
         }
@@ -220,14 +219,14 @@ bool PaymentRequestPlus::getMerchant(X509_STORE *certStore,
     return fResult;
 }
 
-QList<std::pair<CScript, CAmount>> PaymentRequestPlus::getPayTo() const {
-    QList<std::pair<CScript, CAmount>> result;
+QList<std::pair<CScript, Amount>> PaymentRequestPlus::getPayTo() const {
+    QList<std::pair<CScript, Amount>> result;
     for (int i = 0; i < details.outputs_size(); i++) {
-        const unsigned char *scriptStr =
-            (const unsigned char *)details.outputs(i).script().data();
+        const uint8_t *scriptStr =
+            (const uint8_t *)details.outputs(i).script().data();
         CScript s(scriptStr, scriptStr + details.outputs(i).script().size());
 
-        result.append(std::make_pair(s, details.outputs(i).amount()));
+        result.append(std::make_pair(s, Amount(details.outputs(i).amount())));
     }
     return result;
 }

@@ -6,7 +6,7 @@
 #define BITCOIN_QT_PAYMENTSERVER_H
 
 // This class handles payment requests from clicking on
-// bitcoin: URIs
+// bitcoincash: URIs
 //
 // This is somewhat tricky, because we have to deal with the situation where the
 // user clicks on a link during startup/initialization, when the splash-screen
@@ -89,7 +89,7 @@ public:
     // Verify the payment request size is valid as per BIP70
     static bool verifySize(qint64 requestSize);
     // Verify the payment request amount is valid
-    static bool verifyAmount(const CAmount &requestAmount);
+    static bool verifyAmount(const Amount requestAmount);
 
 Q_SIGNALS:
     // Fired when a valid payment request is received
@@ -123,11 +123,12 @@ private Q_SLOTS:
 protected:
     // Constructor registers this on the parent QApplication to receive
     // QEvent::FileOpen and QEvent:Drop events
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
     static bool readPaymentRequestFromFile(const QString &filename,
                                            PaymentRequestPlus &request);
+    bool handleURI(const QString &scheme, const QString &s);
     bool processPaymentRequest(const PaymentRequestPlus &request,
                                SendCoinsRecipient &recipient);
     void fetchRequest(const QUrl &url);

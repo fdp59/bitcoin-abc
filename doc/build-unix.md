@@ -89,6 +89,8 @@ You can add the repository and install using the following commands:
     sudo apt-get update
     sudo apt-get install libdb4.8-dev libdb4.8++-dev
 
+For Debian, BerkeleyDB 4.8 can be installed by following the instructions in the “Berkeley DB” section below.
+
 Ubuntu and Debian have their own libdb-dev and libdb++-dev packages, but these will install
 BerkeleyDB 5.1 or later, which break binary wallet compatibility with the distributed executables which
 are based on BerkeleyDB 4.8. If you do not care about wallet compatibility,
@@ -170,21 +172,23 @@ It is recommended to use Berkeley DB 4.8. If you have to build it yourself:
 ```bash
 BITCOIN_ROOT=$(pwd)
 
-# Pick some path to install BDB to, here we create a directory within the bitcoin directory
-BDB_PREFIX="${BITCOIN_ROOT}/db4"
-mkdir -p $BDB_PREFIX
+# Pick some path to install BDB to, here we install in /usr/local/db4
+BDB_PREFIX="/usr/local/db4"
+sudo mkdir -p $BDB_PREFIX
+
+cd $BDB_PREFIX/..
 
 # Fetch the source and verify that it is not tampered with
-wget 'http://download.oracle.com/berkeley-db/db-4.8.30.NC.tar.gz'
+sudo wget 'http://download.oracle.com/berkeley-db/db-4.8.30.NC.tar.gz'
 echo '12edc0df75bf9abd7f82f821795bcee50f42cb2e5f76a6a281b85732798364ef  db-4.8.30.NC.tar.gz' | sha256sum -c
 # -> db-4.8.30.NC.tar.gz: OK
-tar -xzvf db-4.8.30.NC.tar.gz
+sudo tar -xzvf db-4.8.30.NC.tar.gz
 
 # Build the library and install to our prefix
 cd db-4.8.30.NC/build_unix/
 #  Note: Do a static build so that it can be embedded into the executable, instead of having to find a .so at runtime
-../dist/configure --enable-cxx --disable-shared --with-pic --prefix=$BDB_PREFIX
-make install
+sudo ../dist/configure --enable-cxx --disable-shared --with-pic --prefix=$BDB_PREFIX
+sudo make install
 
 # Configure Bitcoin ABC to use our own-built instance of BDB
 cd $BITCOIN_ROOT
@@ -196,12 +200,7 @@ cd $BITCOIN_ROOT
 
 Boost
 -----
-If you need to build Boost yourself:
-
-	sudo su
-	./bootstrap.sh
-	./bjam install
-
+For documentation on building Boost look at their official documentation: http://www.boost.org/build/doc/html/bbv2/installation.html
 
 Security
 --------
@@ -321,7 +320,7 @@ Clang is installed by default as `cc` compiler, this makes it easier to get
 started than on [OpenBSD](build-openbsd.md). Installing dependencies:
 
     pkg install autoconf automake libtool pkgconf
-    pkg install boost-libs openssl libevent2
+    pkg install boost-libs openssl libevent gmake
 
 (`libressl` instead of `openssl` will also work)
 
@@ -334,11 +333,25 @@ than 4.8; wallets opened by this build will not be portable!", but as FreeBSD ne
 had a binary release, this may not matter. If backwards compatibility
 with 4.8-built Bitcoin Core is needed follow the steps under "Berkeley DB" above.
 
+Also, if you intend to run the regression tests (qa tests):
+
+    pkg install python3
+
 Then build using:
 
     ./autogen.sh
-    ./configure --with-incompatible-bdb BDB_CFLAGS="-I/usr/local/include/db5" BDB_LIBS="-L/usr/local/lib -ldb_cxx-5"
-    make
+  
+With wallet support:
+
+    ./configure --without-gui --without-miniupnpc --with-incompatible-bdb BDB_CFLAGS="-I/usr/local/include/db5" BDB_LIBS="-L/usr/local/lib -ldb_cxx-5"
+
+Without wallet support:
+
+    ./configure --without-gui --without-miniupnpc --disable-wallet
+
+Then to compile:
+
+    gmake
 
 *Note on debugging*: The version of `gdb` installed by default is [ancient and considered harmful](https://wiki.freebsd.org/GdbRetirement).
 It is not suitable for debugging a multi-threaded C++ program, not even for getting backtraces. Please install the package `gdb` and

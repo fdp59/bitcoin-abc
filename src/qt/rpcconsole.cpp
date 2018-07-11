@@ -10,7 +10,6 @@
 #include "ui_debugwindow.h"
 
 #include "bantablemodel.h"
-#include "bantablemodel.h"
 #include "clientmodel.h"
 #include "guiutil.h"
 #include "platformstyle.h"
@@ -21,8 +20,6 @@
 #include "rpc/client.h"
 #include "rpc/server.h"
 #include "util.h"
-
-#include <openssl/crypto.h>
 
 #include <univalue.h>
 
@@ -74,10 +71,10 @@ const QStringList historyFilter = QStringList() << "importprivkey"
                                                 << "walletpassphrase"
                                                 << "walletpassphrasechange"
                                                 << "encryptwallet";
-}
+} // namespace
 
 /* Object for executing console RPC commands in a separate thread.
-*/
+ */
 class RPCExecutor : public QObject {
     Q_OBJECT
 
@@ -94,7 +91,7 @@ Q_SIGNALS:
 class QtRPCTimerBase : public QObject, public RPCTimerBase {
     Q_OBJECT
 public:
-    QtRPCTimerBase(boost::function<void(void)> &_func, int64_t millis)
+    QtRPCTimerBase(std::function<void(void)> &_func, int64_t millis)
         : func(_func) {
         timer.setSingleShot(true);
         connect(&timer, SIGNAL(timeout()), this, SLOT(timeout()));
@@ -106,14 +103,15 @@ private Q_SLOTS:
 
 private:
     QTimer timer;
-    boost::function<void(void)> func;
+    std::function<void(void)> func;
 };
 
 class QtRPCTimerInterface : public RPCTimerInterface {
 public:
     ~QtRPCTimerInterface() {}
-    const char *Name() { return "Qt"; }
-    RPCTimerBase *NewTimer(boost::function<void(void)> &func, int64_t millis) {
+    const char *Name() override { return "Qt"; }
+    RPCTimerBase *NewTimer(std::function<void(void)> &func,
+                           int64_t millis) override {
         return new QtRPCTimerBase(func, millis);
     }
 };
@@ -268,9 +266,12 @@ bool RPCConsole::RPCParseCommandLine(std::string &strResult,
                         // assume eating space state
                         state = STATE_EATING_SPACES;
                 }
-                if (breakParsing) break;
-                // FALLTHROUGH
+
+                if (breakParsing) {
+                    break;
+                }
             }
+            // FALLTHROUGH
             case STATE_ARGUMENT: // In or after argument
             case STATE_EATING_SPACES_IN_ARG:
             case STATE_EATING_SPACES_IN_BRACKETS:

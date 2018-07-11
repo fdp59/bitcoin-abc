@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "scheduler.h"
 #include "random.h"
+#include "scheduler.h"
 
 #include "test/test_bitcoin.h"
 
@@ -26,21 +26,14 @@ static void microTask(CScheduler &s, boost::mutex &mutex, int &counter,
         boost::chrono::system_clock::time_point::min();
     if (rescheduleTime != noTime) {
         CScheduler::Function f =
-            boost::bind(&microTask, boost::ref(s), boost::ref(mutex),
-                        boost::ref(counter), -delta + 1, noTime);
+            boost::bind(&microTask, std::ref(s), std::ref(mutex),
+                        std::ref(counter), -delta + 1, noTime);
         s.schedule(f, rescheduleTime);
     }
 }
 
 static void MicroSleep(uint64_t n) {
-#if defined(HAVE_WORKING_BOOST_SLEEP_FOR)
     boost::this_thread::sleep_for(boost::chrono::microseconds(n));
-#elif defined(HAVE_WORKING_BOOST_SLEEP)
-    boost::this_thread::sleep(boost::posix_time::microseconds(n));
-#else
-// should never get here
-#error missing boost sleep implementation
-#endif
 }
 
 BOOST_AUTO_TEST_CASE(manythreads) {
@@ -77,9 +70,9 @@ BOOST_AUTO_TEST_CASE(manythreads) {
             now + boost::chrono::microseconds(500 + randomMsec(rng));
         int whichCounter = zeroToNine(rng);
         CScheduler::Function f = boost::bind(
-            &microTask, boost::ref(microTasks),
-            boost::ref(counterMutex[whichCounter]),
-            boost::ref(counter[whichCounter]), randomDelta(rng), tReschedule);
+            &microTask, std::ref(microTasks),
+            std::ref(counterMutex[whichCounter]),
+            std::ref(counter[whichCounter]), randomDelta(rng), tReschedule);
         microTasks.schedule(f, t);
     }
     nTasks = microTasks.getQueueInfo(first, last);
@@ -108,9 +101,9 @@ BOOST_AUTO_TEST_CASE(manythreads) {
             now + boost::chrono::microseconds(500 + randomMsec(rng));
         int whichCounter = zeroToNine(rng);
         CScheduler::Function f = boost::bind(
-            &microTask, boost::ref(microTasks),
-            boost::ref(counterMutex[whichCounter]),
-            boost::ref(counter[whichCounter]), randomDelta(rng), tReschedule);
+            &microTask, std::ref(microTasks),
+            std::ref(counterMutex[whichCounter]),
+            std::ref(counter[whichCounter]), randomDelta(rng), tReschedule);
         microTasks.schedule(f, t);
     }
 

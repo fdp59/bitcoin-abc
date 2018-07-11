@@ -1,12 +1,16 @@
 // Copyright (c) 2012-2016 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "cuckoocache.h"
 #include "random.h"
+#include "script/sigcache.h"
 #include "test/test_bitcoin.h"
+
+#include <thread>
+
 #include <boost/test/unit_test.hpp>
 #include <boost/thread.hpp>
-#include <thread>
 
 /** Test Suite for CuckooCache
  *
@@ -20,31 +24,18 @@
  *  expected behavior. For example improving the hit rate may cause some tests
  *  using BOOST_CHECK_CLOSE to fail.
  */
-FastRandomContext insecure_rand(true);
+FastRandomContext local_rand_ctx(true);
 
 BOOST_AUTO_TEST_SUITE(cuckoocache_tests);
 
-/** insecure_GetRandHash fills in a uint256 from insecure_rand
+/**
+ * insecure_GetRandHash fills in a uint256 from local_rand_ctx
  */
 void insecure_GetRandHash(uint256 &t) {
     uint32_t *ptr = (uint32_t *)t.begin();
     for (uint8_t j = 0; j < 8; ++j)
-        *(ptr++) = insecure_rand.rand32();
+        *(ptr++) = local_rand_ctx.rand32();
 }
-
-/** Definition copied from /src/script/sigcache.cpp
- */
-class uint256Hasher {
-public:
-    template <uint8_t hash_select>
-    uint32_t operator()(const uint256 &key) const {
-        static_assert(hash_select < 8,
-                      "SignatureCacheHasher only has 8 hashes available.");
-        uint32_t u;
-        std::memcpy(&u, key.begin() + 4 * hash_select, 4);
-        return u;
-    }
-};
 
 /**
  * Test that no values not inserted into the cache are read out of it.
@@ -52,8 +43,8 @@ public:
  * There are no repeats in the first 200000 insecure_GetRandHash calls
  */
 BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes) {
-    insecure_rand = FastRandomContext(true);
-    CuckooCache::cache<uint256, uint256Hasher> cc{};
+    local_rand_ctx = FastRandomContext(true);
+    CuckooCache::cache<uint256, SignatureCacheHasher> cc{};
     cc.setup_bytes(32 << 20);
     uint256 v;
     for (int x = 0; x < 100000; ++x) {
@@ -71,7 +62,7 @@ BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes) {
  * inserted into a megabytes sized cache
  */
 template <typename Cache> double test_cache(size_t megabytes, double load) {
-    insecure_rand = FastRandomContext(true);
+    local_rand_ctx = FastRandomContext(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -81,7 +72,7 @@ template <typename Cache> double test_cache(size_t megabytes, double load) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j)
-            *(ptr++) = insecure_rand.rand32();
+            *(ptr++) = local_rand_ctx.rand32();
     }
     /**
      * We make a copy of the hashes because future optimizations of the
@@ -130,8 +121,9 @@ BOOST_AUTO_TEST_CASE(cuckoocache_hit_rate_ok) {
     double HitRateThresh = 0.98;
     size_t megabytes = 32;
     for (double load = 0.1; load < 2; load *= 2) {
-        double hits = test_cache<CuckooCache::cache<uint256, uint256Hasher>>(
-            megabytes, load);
+        double hits =
+            test_cache<CuckooCache::cache<uint256, SignatureCacheHasher>>(
+                megabytes, load);
         BOOST_CHECK(normalize_hit_rate(hits, load) > HitRateThresh);
     }
 }
@@ -140,7 +132,7 @@ BOOST_AUTO_TEST_CASE(cuckoocache_hit_rate_ok) {
  * that the hit rate of "fresher" keys is reasonable*/
 template <typename Cache> void test_cache_erase(size_t megabytes) {
     double load = 1;
-    insecure_rand = FastRandomContext(true);
+    local_rand_ctx = FastRandomContext(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -150,7 +142,7 @@ template <typename Cache> void test_cache_erase(size_t megabytes) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j)
-            *(ptr++) = insecure_rand.rand32();
+            *(ptr++) = local_rand_ctx.rand32();
     }
     /** We make a copy of the hashes because future optimizations of the
      * cuckoocache may overwrite the inserted element, so the test is
@@ -196,12 +188,13 @@ template <typename Cache> void test_cache_erase(size_t megabytes) {
 
 BOOST_AUTO_TEST_CASE(cuckoocache_erase_ok) {
     size_t megabytes = 32;
-    test_cache_erase<CuckooCache::cache<uint256, uint256Hasher>>(megabytes);
+    test_cache_erase<CuckooCache::cache<uint256, SignatureCacheHasher>>(
+        megabytes);
 }
 
 template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
     double load = 1;
-    insecure_rand = FastRandomContext(true);
+    local_rand_ctx = FastRandomContext(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -211,7 +204,7 @@ template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j)
-            *(ptr++) = insecure_rand.rand32();
+            *(ptr++) = local_rand_ctx.rand32();
     }
     /** We make a copy of the hashes because future optimizations of the
      * cuckoocache may overwrite the inserted element, so the test is
@@ -279,8 +272,8 @@ template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
 }
 BOOST_AUTO_TEST_CASE(cuckoocache_erase_parallel_ok) {
     size_t megabytes = 32;
-    test_cache_erase_parallel<CuckooCache::cache<uint256, uint256Hasher>>(
-        megabytes);
+    test_cache_erase_parallel<
+        CuckooCache::cache<uint256, SignatureCacheHasher>>(megabytes);
 }
 
 template <typename Cache> void test_cache_generations() {
@@ -301,7 +294,7 @@ template <typename Cache> void test_cache_generations() {
     // iterations with non-deterministic values, so it isn't "overfit" to the
     // specific entropy in FastRandomContext(true) and implementation of the
     // cache.
-    insecure_rand = FastRandomContext(true);
+    local_rand_ctx = FastRandomContext(true);
 
     // block_activity models a chunk of network activity. n_insert elements are
     // adde to the cache. The first and last n/4 are stored for removal later
@@ -317,7 +310,7 @@ template <typename Cache> void test_cache_generations() {
             for (uint32_t i = 0; i < n_insert; ++i) {
                 uint32_t *ptr = (uint32_t *)inserts[i].begin();
                 for (uint8_t j = 0; j < 8; ++j)
-                    *(ptr++) = insecure_rand.rand32();
+                    *(ptr++) = local_rand_ctx.rand32();
             }
             for (uint32_t i = 0; i < n_insert / 4; ++i)
                 reads.push_back(inserts[i]);
@@ -374,7 +367,7 @@ template <typename Cache> void test_cache_generations() {
                 max_rate_less_than_tight_hit_rate);
 }
 BOOST_AUTO_TEST_CASE(cuckoocache_generations) {
-    test_cache_generations<CuckooCache::cache<uint256, uint256Hasher>>();
+    test_cache_generations<CuckooCache::cache<uint256, SignatureCacheHasher>>();
 }
 
 BOOST_AUTO_TEST_SUITE_END();

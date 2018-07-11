@@ -8,7 +8,6 @@
 #include "primitives/transaction.h"
 #include "sync.h"
 #include "test/test_bitcoin.h"
-#include "test/test_random.h"
 #include "utilmoneystr.h"
 #include "utilstrencodings.h"
 
@@ -16,8 +15,6 @@
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
-extern std::map<std::string, std::string> mapArgs;
 
 BOOST_FIXTURE_TEST_SUITE(util_tests, BasicTestingSetup)
 
@@ -39,7 +36,7 @@ BOOST_AUTO_TEST_CASE(util_criticalsection) {
     } while (0);
 }
 
-static const unsigned char ParseHex_expected[65] = {
+static const uint8_t ParseHex_expected[65] = {
     0x04, 0x67, 0x8a, 0xfd, 0xb0, 0xfe, 0x55, 0x48, 0x27, 0x19, 0x67,
     0xf1, 0xa6, 0x71, 0x30, 0xb7, 0x10, 0x5c, 0xd6, 0xa8, 0x28, 0xe0,
     0x39, 0x09, 0xa6, 0x79, 0x62, 0xe0, 0xea, 0x1f, 0x61, 0xde, 0xb6,
@@ -47,8 +44,8 @@ static const unsigned char ParseHex_expected[65] = {
     0xe5, 0x1e, 0xc1, 0x12, 0xde, 0x5c, 0x38, 0x4d, 0xf7, 0xba, 0x0b,
     0x8d, 0x57, 0x8a, 0x4c, 0x70, 0x2b, 0x6b, 0xf1, 0x1d, 0x5f};
 BOOST_AUTO_TEST_CASE(util_ParseHex) {
-    std::vector<unsigned char> result;
-    std::vector<unsigned char> expected(
+    std::vector<uint8_t> result;
+    std::vector<uint8_t> expected(
         ParseHex_expected, ParseHex_expected + sizeof(ParseHex_expected));
     // Basic test vector
     result = ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0"
@@ -84,8 +81,7 @@ BOOST_AUTO_TEST_CASE(util_HexStr) {
 
     BOOST_CHECK_EQUAL(HexStr(ParseHex_expected, ParseHex_expected, true), "");
 
-    std::vector<unsigned char> ParseHex_vec(ParseHex_expected,
-                                            ParseHex_expected + 5);
+    std::vector<uint8_t> ParseHex_vec(ParseHex_expected, ParseHex_expected + 5);
 
     BOOST_CHECK_EQUAL(HexStr(ParseHex_vec, true), "04 67 8a fd b0");
 }
@@ -104,67 +100,84 @@ BOOST_AUTO_TEST_CASE(util_DateTimeStrFormat) {
         "Fri, 30 Sep 2011 23:36:17 +0000");
 }
 
+class TestArgsManager : public ArgsManager {
+public:
+    std::map<std::string, std::string> &GetMapArgs() { return mapArgs; };
+    const std::map<std::string, std::vector<std::string>> &GetMapMultiArgs() {
+        return mapMultiArgs;
+    };
+};
+
 BOOST_AUTO_TEST_CASE(util_ParseParameters) {
+    TestArgsManager testArgs;
     const char *argv_test[] = {"-ignored",      "-a", "-b",  "-ccc=argument",
                                "-ccc=multiple", "f",  "-d=e"};
 
-    ParseParameters(0, (char **)argv_test);
-    BOOST_CHECK(mapArgs.empty() && mapMultiArgs.empty());
+    testArgs.ParseParameters(0, (char **)argv_test);
+    BOOST_CHECK(testArgs.GetMapArgs().empty() &&
+                testArgs.GetMapMultiArgs().empty());
 
-    ParseParameters(1, (char **)argv_test);
-    BOOST_CHECK(mapArgs.empty() && mapMultiArgs.empty());
+    testArgs.ParseParameters(1, (char **)argv_test);
+    BOOST_CHECK(testArgs.GetMapArgs().empty() &&
+                testArgs.GetMapMultiArgs().empty());
 
-    ParseParameters(5, (char **)argv_test);
+    testArgs.ParseParameters(5, (char **)argv_test);
     // expectation: -ignored is ignored (program name argument),
     // -a, -b and -ccc end up in map, -d ignored because it is after
     // a non-option argument (non-GNU option parsing)
-    BOOST_CHECK(mapArgs.size() == 3 && mapMultiArgs.size() == 3);
-    BOOST_CHECK(IsArgSet("-a") && IsArgSet("-b") && IsArgSet("-ccc") &&
-                !IsArgSet("f") && !IsArgSet("-d"));
-    BOOST_CHECK(mapMultiArgs.count("-a") && mapMultiArgs.count("-b") &&
-                mapMultiArgs.count("-ccc") && !mapMultiArgs.count("f") &&
-                !mapMultiArgs.count("-d"));
+    BOOST_CHECK(testArgs.GetMapArgs().size() == 3 &&
+                testArgs.GetMapMultiArgs().size() == 3);
+    BOOST_CHECK(testArgs.IsArgSet("-a") && testArgs.IsArgSet("-b") &&
+                testArgs.IsArgSet("-ccc") && !testArgs.IsArgSet("f") &&
+                !testArgs.IsArgSet("-d"));
+    BOOST_CHECK(testArgs.GetMapMultiArgs().count("-a") &&
+                testArgs.GetMapMultiArgs().count("-b") &&
+                testArgs.GetMapMultiArgs().count("-ccc") &&
+                !testArgs.GetMapMultiArgs().count("f") &&
+                !testArgs.GetMapMultiArgs().count("-d"));
 
-    BOOST_CHECK(mapArgs["-a"] == "" && mapArgs["-ccc"] == "multiple");
-    BOOST_CHECK(mapMultiArgs.at("-ccc").size() == 2);
+    BOOST_CHECK(testArgs.GetMapArgs()["-a"] == "" &&
+                testArgs.GetMapArgs()["-ccc"] == "multiple");
+    BOOST_CHECK(testArgs.GetArgs("-ccc").size() == 2);
 }
 
 BOOST_AUTO_TEST_CASE(util_GetArg) {
-    mapArgs.clear();
-    mapArgs["strtest1"] = "string...";
+    TestArgsManager testArgs;
+    testArgs.GetMapArgs().clear();
+    testArgs.GetMapArgs()["strtest1"] = "string...";
     // strtest2 undefined on purpose
-    mapArgs["inttest1"] = "12345";
-    mapArgs["inttest2"] = "81985529216486895";
+    testArgs.GetMapArgs()["inttest1"] = "12345";
+    testArgs.GetMapArgs()["inttest2"] = "81985529216486895";
     // inttest3 undefined on purpose
-    mapArgs["booltest1"] = "";
+    testArgs.GetMapArgs()["booltest1"] = "";
     // booltest2 undefined on purpose
-    mapArgs["booltest3"] = "0";
-    mapArgs["booltest4"] = "1";
+    testArgs.GetMapArgs()["booltest3"] = "0";
+    testArgs.GetMapArgs()["booltest4"] = "1";
 
-    BOOST_CHECK_EQUAL(GetArg("strtest1", "default"), "string...");
-    BOOST_CHECK_EQUAL(GetArg("strtest2", "default"), "default");
-    BOOST_CHECK_EQUAL(GetArg("inttest1", -1), 12345);
-    BOOST_CHECK_EQUAL(GetArg("inttest2", -1), 81985529216486895LL);
-    BOOST_CHECK_EQUAL(GetArg("inttest3", -1), -1);
-    BOOST_CHECK_EQUAL(GetBoolArg("booltest1", false), true);
-    BOOST_CHECK_EQUAL(GetBoolArg("booltest2", false), false);
-    BOOST_CHECK_EQUAL(GetBoolArg("booltest3", false), false);
-    BOOST_CHECK_EQUAL(GetBoolArg("booltest4", false), true);
+    BOOST_CHECK_EQUAL(testArgs.GetArg("strtest1", "default"), "string...");
+    BOOST_CHECK_EQUAL(testArgs.GetArg("strtest2", "default"), "default");
+    BOOST_CHECK_EQUAL(testArgs.GetArg("inttest1", -1), 12345);
+    BOOST_CHECK_EQUAL(testArgs.GetArg("inttest2", -1), 81985529216486895LL);
+    BOOST_CHECK_EQUAL(testArgs.GetArg("inttest3", -1), -1);
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest1", false), true);
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest2", false), false);
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest3", false), false);
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest4", false), true);
 }
 
 BOOST_AUTO_TEST_CASE(util_FormatMoney) {
-    BOOST_CHECK_EQUAL(FormatMoney(0), "0.00");
-    BOOST_CHECK_EQUAL(FormatMoney((COIN / 10000) * 123456789), "12345.6789");
-    BOOST_CHECK_EQUAL(FormatMoney(-COIN), "-1.00");
+    BOOST_CHECK_EQUAL(FormatMoney(Amount(0)), "0.00");
+    BOOST_CHECK_EQUAL(FormatMoney(123456789 * (COIN / 10000)), "12345.6789");
+    BOOST_CHECK_EQUAL(FormatMoney(-1 * COIN), "-1.00");
 
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 100000000), "100000000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 10000000), "10000000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 1000000), "1000000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 100000), "100000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 10000), "10000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 1000), "1000.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 100), "100.00");
-    BOOST_CHECK_EQUAL(FormatMoney(COIN * 10), "10.00");
+    BOOST_CHECK_EQUAL(FormatMoney(100000000 * COIN), "100000000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(10000000 * COIN), "10000000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(1000000 * COIN), "1000000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(100000 * COIN), "100000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(10000 * COIN), "10000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(1000 * COIN), "1000.00");
+    BOOST_CHECK_EQUAL(FormatMoney(100 * COIN), "100.00");
+    BOOST_CHECK_EQUAL(FormatMoney(10 * COIN), "10.00");
     BOOST_CHECK_EQUAL(FormatMoney(COIN), "1.00");
     BOOST_CHECK_EQUAL(FormatMoney(COIN / 10), "0.10");
     BOOST_CHECK_EQUAL(FormatMoney(COIN / 100), "0.01");
@@ -177,29 +190,29 @@ BOOST_AUTO_TEST_CASE(util_FormatMoney) {
 }
 
 BOOST_AUTO_TEST_CASE(util_ParseMoney) {
-    CAmount ret = 0;
+    Amount ret(0);
     BOOST_CHECK(ParseMoney("0.0", ret));
-    BOOST_CHECK_EQUAL(ret, 0);
+    BOOST_CHECK_EQUAL(ret, Amount(0));
 
     BOOST_CHECK(ParseMoney("12345.6789", ret));
-    BOOST_CHECK_EQUAL(ret, (COIN / 10000) * 123456789);
+    BOOST_CHECK_EQUAL(ret, 123456789 * (COIN / 10000));
 
     BOOST_CHECK(ParseMoney("100000000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 100000000);
+    BOOST_CHECK_EQUAL(ret, 100000000 * COIN);
     BOOST_CHECK(ParseMoney("10000000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 10000000);
+    BOOST_CHECK_EQUAL(ret, 10000000 * COIN);
     BOOST_CHECK(ParseMoney("1000000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 1000000);
+    BOOST_CHECK_EQUAL(ret, 1000000 * COIN);
     BOOST_CHECK(ParseMoney("100000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 100000);
+    BOOST_CHECK_EQUAL(ret, 100000 * COIN);
     BOOST_CHECK(ParseMoney("10000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 10000);
+    BOOST_CHECK_EQUAL(ret, 10000 * COIN);
     BOOST_CHECK(ParseMoney("1000.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 1000);
+    BOOST_CHECK_EQUAL(ret, 1000 * COIN);
     BOOST_CHECK(ParseMoney("100.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 100);
+    BOOST_CHECK_EQUAL(ret, 100 * COIN);
     BOOST_CHECK(ParseMoney("10.00", ret));
-    BOOST_CHECK_EQUAL(ret, COIN * 10);
+    BOOST_CHECK_EQUAL(ret, 10 * COIN);
     BOOST_CHECK(ParseMoney("1.00", ret));
     BOOST_CHECK_EQUAL(ret, COIN);
     BOOST_CHECK(ParseMoney("1", ret));
@@ -242,8 +255,31 @@ BOOST_AUTO_TEST_CASE(util_IsHex) {
     BOOST_CHECK(!IsHex("0x0000"));
 }
 
+BOOST_AUTO_TEST_CASE(util_IsHexNumber) {
+    BOOST_CHECK(IsHexNumber("0x0"));
+    BOOST_CHECK(IsHexNumber("0"));
+    BOOST_CHECK(IsHexNumber("0x10"));
+    BOOST_CHECK(IsHexNumber("10"));
+    BOOST_CHECK(IsHexNumber("0xff"));
+    BOOST_CHECK(IsHexNumber("ff"));
+    BOOST_CHECK(IsHexNumber("0xFfa"));
+    BOOST_CHECK(IsHexNumber("Ffa"));
+    BOOST_CHECK(IsHexNumber("0x00112233445566778899aabbccddeeffAABBCCDDEEFF"));
+    BOOST_CHECK(IsHexNumber("00112233445566778899aabbccddeeffAABBCCDDEEFF"));
+
+    BOOST_CHECK(!IsHexNumber(""));      // empty string not allowed
+    BOOST_CHECK(!IsHexNumber("0x"));    // empty string after prefix not allowed
+    BOOST_CHECK(!IsHexNumber("0x0 "));  // no spaces at end,
+    BOOST_CHECK(!IsHexNumber(" 0x0"));  // or beginning,
+    BOOST_CHECK(!IsHexNumber("0x 0"));  // or middle,
+    BOOST_CHECK(!IsHexNumber(" "));     // etc.
+    BOOST_CHECK(!IsHexNumber("0x0ga")); // invalid character
+    BOOST_CHECK(!IsHexNumber("x0"));    // broken prefix
+    BOOST_CHECK(!IsHexNumber("0x0x00")); // two prefixes not allowed
+}
+
 BOOST_AUTO_TEST_CASE(util_seed_insecure_rand) {
-    seed_insecure_rand(true);
+    SeedInsecureRand(true);
     for (int mod = 2; mod < 11; mod++) {
         int mask = 1;
         // Really rough binomal confidence approximation.
@@ -618,6 +654,63 @@ BOOST_AUTO_TEST_CASE(test_ParseFixedPoint) {
     BOOST_CHECK(!ParseFixedPoint("1.1e", 8, &amount));
     BOOST_CHECK(!ParseFixedPoint("1.1e-", 8, &amount));
     BOOST_CHECK(!ParseFixedPoint("1.", 8, &amount));
+}
+
+template <int F, int T>
+static void CheckConvertBits(const std::vector<uint8_t> &in,
+                             const std::vector<uint8_t> &expected) {
+    std::vector<uint8_t> outpad;
+    bool ret = ConvertBits<F, T, true>(outpad, in.begin(), in.end());
+    BOOST_CHECK(ret);
+    BOOST_CHECK(outpad == expected);
+
+    const bool dopad = (in.size() * F) % T;
+    std::vector<uint8_t> outnopad;
+    ret = ConvertBits<F, T, false>(outnopad, in.begin(), in.end());
+    BOOST_CHECK(ret != dopad);
+
+    if (dopad) {
+        // We should have skipped the last digit.
+        outnopad.push_back(expected.back());
+    }
+
+    BOOST_CHECK(outnopad == expected);
+
+    // Check the other way around.
+    std::vector<uint8_t> orignopad;
+    ret = ConvertBits<T, F, false>(orignopad, expected.begin(), expected.end());
+    BOOST_CHECK(ret == !((expected.size() * T) % F));
+    BOOST_CHECK(orignopad == in);
+
+    // Check with padding. We may get an extra 0 in that case.
+    std::vector<uint8_t> origpad;
+    ret = ConvertBits<T, F, true>(origpad, expected.begin(), expected.end());
+    BOOST_CHECK(ret);
+
+    if (dopad) {
+        BOOST_CHECK_EQUAL(origpad.back(), 0);
+        origpad.pop_back();
+    }
+
+    BOOST_CHECK(origpad == in);
+}
+
+BOOST_AUTO_TEST_CASE(test_ConvertBits) {
+    CheckConvertBits<8, 5>({}, {});
+    CheckConvertBits<8, 5>({0xff}, {0x1f, 0x1c});
+    CheckConvertBits<8, 5>({0xff, 0xff}, {0x1f, 0x1f, 0x1f, 0x10});
+    CheckConvertBits<8, 5>({0xff, 0xff, 0xff}, {0x1f, 0x1f, 0x1f, 0x1f, 0x1e});
+    CheckConvertBits<8, 5>({0xff, 0xff, 0xff, 0xff},
+                           {0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x18});
+    CheckConvertBits<8, 5>({0xff, 0xff, 0xff, 0xff, 0xff},
+                           {0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f});
+    CheckConvertBits<8, 5>({0xff, 0xff, 0xff, 0xff, 0xff},
+                           {0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f});
+    CheckConvertBits<8, 5>({0xff, 0xff, 0xff, 0xff, 0xff},
+                           {0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f, 0x1f});
+    CheckConvertBits<8, 5>({0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef},
+                           {0x00, 0x04, 0x11, 0x14, 0x0a, 0x19, 0x1c, 0x09,
+                            0x15, 0x0f, 0x06, 0x1e, 0x1e});
 }
 
 BOOST_AUTO_TEST_SUITE_END()

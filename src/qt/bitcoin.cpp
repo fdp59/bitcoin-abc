@@ -49,6 +49,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QSslConfiguration>
+#include <QStringList>
 #include <QThread>
 #include <QTimer>
 #include <QTranslator>
@@ -81,7 +82,8 @@ Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin);
 
 // Declare meta types used for QMetaObject::invokeMethod
 Q_DECLARE_METATYPE(bool *)
-Q_DECLARE_METATYPE(CAmount)
+Q_DECLARE_METATYPE(Amount)
+
 // Config is non-copyable so we can only register pointers to it
 Q_DECLARE_METATYPE(Config *)
 
@@ -93,7 +95,7 @@ static void InitMessage(const std::string &message) {
  * Translate string to current locale using Qt.
  */
 static std::string Translate(const char *psz) {
-    return QCoreApplication::translate("bitcoin-core", psz).toStdString();
+    return QCoreApplication::translate("bitcoin-abc", psz).toStdString();
 }
 
 static QString GetLangTerritory() {
@@ -107,8 +109,8 @@ static QString GetLangTerritory() {
     if (!lang_territory_qsettings.isEmpty())
         lang_territory = lang_territory_qsettings;
     // 3) -lang command line argument
-    lang_territory =
-        QString::fromStdString(GetArg("-lang", lang_territory.toStdString()));
+    lang_territory = QString::fromStdString(
+        gArgs.GetArg("-lang", lang_territory.toStdString()));
     return lang_territory;
 }
 
@@ -161,25 +163,32 @@ static void initTranslations(QTranslator &qtTranslatorBase,
 /* qDebug() message handler --> debug.log */
 #if QT_VERSION < 0x050000
 void DebugMessageHandler(QtMsgType type, const char *msg) {
-    const char *category = (type == QtDebugMsg) ? "qt" : nullptr;
-    LogPrint(category, "GUI: %s\n", msg);
+    if (type == QtDebugMsg) {
+        LogPrint(BCLog::QT, "GUI: %s\n", msg);
+    } else {
+        LogPrintf("GUI: %s\n", msg);
+    }
 }
 #else
 void DebugMessageHandler(QtMsgType type, const QMessageLogContext &context,
                          const QString &msg) {
     Q_UNUSED(context);
-    const char *category = (type == QtDebugMsg) ? "qt" : nullptr;
-    LogPrint(category, "GUI: %s\n", msg.toStdString());
+    if (type == QtDebugMsg) {
+        LogPrint(BCLog::QT, "GUI: %s\n", msg.toStdString());
+    } else {
+        LogPrintf("GUI: %s\n", msg.toStdString());
+    }
 }
 #endif
 
-/** Class encapsulating Bitcoin Core startup and shutdown.
+/**
+ * Class encapsulating Bitcoin ABC startup and shutdown.
  * Allows running startup and shutdown in a different thread from the UI thread.
  */
-class BitcoinCore : public QObject {
+class BitcoinABC : public QObject {
     Q_OBJECT
 public:
-    explicit BitcoinCore();
+    explicit BitcoinABC();
 
 public Q_SLOTS:
     void initialize(Config *config);
@@ -214,7 +223,7 @@ public:
     /// Create options model
     void createOptionsModel(bool resetSettings);
     /// Create main window
-    void createWindow(const NetworkStyle *networkStyle);
+    void createWindow(const Config *, const NetworkStyle *networkStyle);
     /// Create splash screen
     void createSplashScreen(const NetworkStyle *networkStyle);
 
@@ -261,14 +270,14 @@ private:
 
 #include "bitcoin.moc"
 
-BitcoinCore::BitcoinCore() : QObject() {}
+BitcoinABC::BitcoinABC() : QObject() {}
 
-void BitcoinCore::handleRunawayException(const std::exception *e) {
+void BitcoinABC::handleRunawayException(const std::exception *e) {
     PrintExceptionContinue(e, "Runaway exception");
     Q_EMIT runawayException(QString::fromStdString(GetWarnings("gui")));
 }
 
-void BitcoinCore::initialize(Config *cfg) {
+void BitcoinABC::initialize(Config *cfg) {
     Config &config(*cfg);
     try {
         qDebug() << __func__ << ": Running AppInit2 in thread";
@@ -296,7 +305,7 @@ void BitcoinCore::initialize(Config *cfg) {
     }
 }
 
-void BitcoinCore::shutdown() {
+void BitcoinABC::shutdown() {
     try {
         qDebug() << __func__ << ": Running Shutdown in thread";
         Interrupt(threadGroup);
@@ -324,7 +333,7 @@ BitcoinApplication::BitcoinApplication(int &argc, char **argv)
     // This must be done inside the BitcoinApplication constructor, or after it,
     // because PlatformStyle::instantiate requires a QApplication.
     std::string platformName;
-    platformName = GetArg("-uiplatform", BitcoinGUI::DEFAULT_UIPLATFORM);
+    platformName = gArgs.GetArg("-uiplatform", BitcoinGUI::DEFAULT_UIPLATFORM);
     platformStyle =
         PlatformStyle::instantiate(QString::fromStdString(platformName));
     // Fall back to "other" if specified name not found.
@@ -362,8 +371,9 @@ void BitcoinApplication::createOptionsModel(bool resetSettings) {
     optionsModel = new OptionsModel(nullptr, resetSettings);
 }
 
-void BitcoinApplication::createWindow(const NetworkStyle *networkStyle) {
-    window = new BitcoinGUI(platformStyle, networkStyle, 0);
+void BitcoinApplication::createWindow(const Config *config,
+                                      const NetworkStyle *networkStyle) {
+    window = new BitcoinGUI(config, platformStyle, networkStyle, 0);
 
     pollShutdownTimer = new QTimer(window);
     connect(pollShutdownTimer, SIGNAL(timeout()), window,
@@ -385,7 +395,7 @@ void BitcoinApplication::createSplashScreen(const NetworkStyle *networkStyle) {
 void BitcoinApplication::startThread() {
     if (coreThread) return;
     coreThread = new QThread(this);
-    BitcoinCore *executor = new BitcoinCore();
+    BitcoinABC *executor = new BitcoinABC();
     executor->moveToThread(coreThread);
 
     /*  communication to and from thread */
@@ -477,9 +487,10 @@ void BitcoinApplication::initializeResult(int retval) {
         window->setClientModel(clientModel);
 
 #ifdef ENABLE_WALLET
-        if (pwalletMain) {
+        // TODO: Expose secondary wallets
+        if (!vpwallets.empty()) {
             walletModel =
-                new WalletModel(platformStyle, pwalletMain, optionsModel);
+                new WalletModel(platformStyle, vpwallets[0], optionsModel);
 
             window->addWallet(BitcoinGUI::DEFAULT_WALLET, walletModel);
             window->setCurrentWallet(BitcoinGUI::DEFAULT_WALLET);
@@ -493,7 +504,7 @@ void BitcoinApplication::initializeResult(int retval) {
 #endif
 
         // If -min option passed, start window minimized.
-        if (GetBoolArg("-min", false)) {
+        if (gArgs.GetBoolArg("-min", false)) {
             window->showMinimized();
         } else {
             window->show();
@@ -502,7 +513,7 @@ void BitcoinApplication::initializeResult(int retval) {
 
 #ifdef ENABLE_WALLET
         // Now that initialization/startup is done, process any command-line
-        // bitcoin: URIs or payment requests:
+        // bitcoincash: URIs or payment requests:
         connect(paymentServer,
                 SIGNAL(receivedPaymentRequest(SendCoinsRecipient)), window,
                 SLOT(handlePaymentRequest(SendCoinsRecipient)));
@@ -540,12 +551,50 @@ WId BitcoinApplication::getMainWinId() const {
 }
 
 #ifndef BITCOIN_QT_TEST
+
+static void MigrateSettings() {
+    assert(!QApplication::applicationName().isEmpty());
+
+    static const QString legacyAppName("Bitcoin-Qt"),
+#ifdef Q_OS_DARWIN
+        // Macs and/or iOS et al use a domain-style name for Settings
+        // files. All other platforms use a simple orgname. This
+        // difference is documented in the QSettings class documentation.
+        legacyOrg("bitcoin.org");
+#else
+        legacyOrg("Bitcoin");
+#endif
+    QSettings
+        // below picks up settings file location based on orgname,appname
+        legacy(legacyOrg, legacyAppName),
+        // default c'tor below picks up settings file location based on
+        // QApplication::applicationName(), et al -- which was already set
+        // in main()
+        abc;
+#ifdef Q_OS_DARWIN
+    // Disable bogus OSX keys from MacOS system-wide prefs that may cloud our
+    // judgement ;) (this behavior is also documented in QSettings docs)
+    legacy.setFallbacksEnabled(false);
+    abc.setFallbacksEnabled(false);
+#endif
+    const QStringList legacyKeys(legacy.allKeys());
+
+    // We only migrate settings if we have Core settings but no Bitcoin-ABC
+    // settings
+    if (!legacyKeys.isEmpty() && abc.allKeys().isEmpty()) {
+        for (const QString &key : legacyKeys) {
+            // now, copy settings over
+            abc.setValue(key, legacy.value(key));
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     SetupEnvironment();
 
     /// 1. Parse command-line options. These take precedence over anything else.
     // Command-line options take precedence:
-    ParseParameters(argc, argv);
+    gArgs.ParseParameters(argc, argv);
 
 // Do not refer to data directory yet, this can be overridden by
 // Intro::pickDataDirectory
@@ -581,10 +630,11 @@ int main(int argc, char *argv[]) {
 
     // Register meta types used for QMetaObject::invokeMethod
     qRegisterMetaType<bool *>();
-    //   Need to pass name here as CAmount is a typedef (see
+    //   Need to pass name here as Amount is a typedef (see
     //   http://qt-project.org/doc/qt-5/qmetatype.html#qRegisterMetaType)
     //   IMPORTANT if it is no longer a typedef use the normal variant above
-    qRegisterMetaType<CAmount>("CAmount");
+    qRegisterMetaType<Amount>("Amount");
+    qRegisterMetaType<std::function<void(void)>>("std::function<void(void)>");
 
     // Need to register any types Qt doesn't know about if you intend
     // to use them with the signal/slot mechanism Qt provides. Even pointers.
@@ -597,9 +647,17 @@ int main(int argc, char *argv[]) {
     /// 3. Application identification
     // must be set before OptionsModel is initialized or translations are
     // loaded, as it is used to locate QSettings.
+    // Note: If you move these calls somewhere else, be sure to bring
+    // MigrateSettings() below along for the ride.
     QApplication::setOrganizationName(QAPP_ORG_NAME);
     QApplication::setOrganizationDomain(QAPP_ORG_DOMAIN);
     QApplication::setApplicationName(QAPP_APP_NAME_DEFAULT);
+    // Migrate settings from core's/our old GUI settings to Bitcoin ABC
+    // only if core's exist but Bitcoin ABC's doesn't.
+    // NOTE -- this function needs to be called *after* the above 3 lines
+    // that set the app orgname and app name! If you move the above 3 lines
+    // to elsewhere, take this call with you!
+    MigrateSettings();
     GUIUtil::SubstituteFonts(GetLangTerritory());
 
     /// 4. Initialization of translations, so that intro dialog is in user's
@@ -611,9 +669,9 @@ int main(int argc, char *argv[]) {
 
     // Show help message immediately after parsing command-line options (for
     // "-lang") and setting locale, but before showing splash screen.
-    if (IsArgSet("-?") || IsArgSet("-h") || IsArgSet("-help") ||
-        IsArgSet("-version")) {
-        HelpMessageDialog help(nullptr, IsArgSet("-version"));
+    if (gArgs.IsArgSet("-?") || gArgs.IsArgSet("-h") ||
+        gArgs.IsArgSet("-help") || gArgs.IsArgSet("-version")) {
+        HelpMessageDialog help(nullptr, gArgs.IsArgSet("-version"));
         help.showOrPrint();
         return EXIT_SUCCESS;
     }
@@ -624,16 +682,16 @@ int main(int argc, char *argv[]) {
 
     /// 6. Determine availability of data directory and parse bitcoin.conf
     /// - Do not call GetDataDir(true) before this step finishes.
-    if (!boost::filesystem::is_directory(GetDataDir(false))) {
+    if (!fs::is_directory(GetDataDir(false))) {
         QMessageBox::critical(
             0, QObject::tr(PACKAGE_NAME),
             QObject::tr(
                 "Error: Specified data directory \"%1\" does not exist.")
-                .arg(QString::fromStdString(GetArg("-datadir", ""))));
+                .arg(QString::fromStdString(gArgs.GetArg("-datadir", ""))));
         return EXIT_FAILURE;
     }
     try {
-        ReadConfigFile(GetArg("-conf", BITCOIN_CONF_FILENAME));
+        gArgs.ReadConfigFile(gArgs.GetArg("-conf", BITCOIN_CONF_FILENAME));
     } catch (const std::exception &e) {
         QMessageBox::critical(
             0, QObject::tr(PACKAGE_NAME),
@@ -687,7 +745,7 @@ int main(int argc, char *argv[]) {
     if (PaymentServer::ipcSendCommandLine()) exit(EXIT_SUCCESS);
 
     // Start up the payment server early, too, so impatient users that click on
-    // bitcoin: links repeatedly have their payment requests routed to this
+    // bitcoincash: links repeatedly have their payment requests routed to this
     // process:
     app.createPaymentServer();
 #endif
@@ -712,7 +770,7 @@ int main(int argc, char *argv[]) {
     // Allow parameter interaction before we create the options model
     app.parameterSetup();
     // Load GUI settings from QSettings
-    app.createOptionsModel(IsArgSet("-resetguisettings"));
+    app.createOptionsModel(gArgs.IsArgSet("-resetguisettings"));
 
     // Subscribe to global signals from core
     uiInterface.InitMessage.connect(InitMessage);
@@ -720,12 +778,12 @@ int main(int argc, char *argv[]) {
     // Get global config
     Config &config = const_cast<Config &>(GetConfig());
 
-    if (GetBoolArg("-splash", DEFAULT_SPLASHSCREEN) &&
-        !GetBoolArg("-min", false))
+    if (gArgs.GetBoolArg("-splash", DEFAULT_SPLASHSCREEN) &&
+        !gArgs.GetBoolArg("-min", false))
         app.createSplashScreen(networkStyle.data());
 
     try {
-        app.createWindow(networkStyle.data());
+        app.createWindow(&config, networkStyle.data());
         app.requestInitialize(config);
 #if defined(Q_OS_WIN) && QT_VERSION >= 0x050000
         WinShutdownMonitor::registerShutdownBlockReason(

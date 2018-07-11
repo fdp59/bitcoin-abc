@@ -5,10 +5,11 @@
 #ifndef BITCOIN_BENCH_BENCH_H
 #define BITCOIN_BENCH_BENCH_H
 
+#include <functional>
+#include <limits>
 #include <map>
 #include <string>
 
-#include <boost/function.hpp>
 #include <boost/preprocessor/cat.hpp>
 #include <boost/preprocessor/stringize.hpp>
 
@@ -61,7 +62,7 @@ public:
     bool KeepRunning();
 };
 
-typedef boost::function<void(State &)> BenchFunction;
+typedef std::function<void(State &)> BenchFunction;
 
 class BenchRunner {
     typedef std::map<std::string, BenchFunction> BenchmarkMap;
@@ -72,7 +73,7 @@ public:
 
     static void RunAll(double elapsedTimeForOne = 1.0);
 };
-}
+} // namespace benchmark
 
 // BENCHMARK(foo) expands to:  benchmark::BenchRunner bench_11foo("foo", foo);
 #define BENCHMARK(n)                                                           \
