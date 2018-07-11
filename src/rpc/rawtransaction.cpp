@@ -63,8 +63,7 @@ void ScriptPubKeyToJSON(const Config &config, const CScript &scriptPubKey,
     out.push_back(Pair("addresses", a));
 }
 
-<<<<<<< HEAD
-void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue& entry,
+void TxToJSONExpanded(const Config &config, const CTransaction& tx, const uint256 hashBlock, UniValue& entry,
                       int nHeight = 0, int nConfirmations = 0, int nBlockTime = 0)
 {
 
@@ -97,7 +96,7 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
             CSpentIndexValue spentInfo;
             CSpentIndexKey spentKey(txin.prevout.hash, txin.prevout.n);
             if (GetSpentIndex(spentKey, spentInfo)) {
-                in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
+                in.push_back(Pair("value", ValueFromAmount(Amount(spentInfo.satoshis))));
                 in.push_back(Pair("valueSat", spentInfo.satoshis));
                 if (spentInfo.addressType == 1) {
                     in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
@@ -129,10 +128,10 @@ void TxToJSONExpanded(const CTransaction& tx, const uint256 hashBlock, UniValue&
         const CTxOut& txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
         out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
-        out.push_back(Pair("valueSat", txout.nValue));
+        out.push_back(Pair("valueSat", txout.nValue.ToString()));
         out.push_back(Pair("n", (int64_t)i));
         UniValue o(UniValue::VOBJ);
-        ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
+        ScriptPubKeyToJSON(config, txout.scriptPubKey, o, true);
         out.push_back(Pair("scriptPubKey", o));
 
         // Add spent information if spentindex is enabled
@@ -201,7 +200,7 @@ void TxToJSON(const Config &config, const CTransaction &tx,
         const CTxOut &txout = tx.vout[i];
         UniValue out(UniValue::VOBJ);
         out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
-        out.push_back(Pair("valueSat", txout.nValue));
+        out.push_back(Pair("valueSat", txout.nValue.ToString()));
         out.push_back(Pair("n", (int64_t)i));
         UniValue o(UniValue::VOBJ);
         ScriptPubKeyToJSON(config, txout.scriptPubKey, o, true);
@@ -372,7 +371,7 @@ static UniValue getrawtransaction(const Config &config,
 
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("hex", strHex));
-    TxToJSONExpanded(*tx, hashBlock, result, nHeight, nConfirmations, nBlockTime);
+    TxToJSONExpanded(config, *tx, hashBlock, result, nHeight, nConfirmations, nBlockTime);
     return result;
 }
 

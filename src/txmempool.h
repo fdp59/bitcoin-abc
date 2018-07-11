@@ -6,7 +6,6 @@
 #ifndef BITCOIN_TXMEMPOOL_H
 #define BITCOIN_TXMEMPOOL_H
 
-<<<<<<< HEAD
 #include <map>
 #include <memory>
 #include <set>
@@ -16,8 +15,6 @@
 
 #include "addressindex.h"
 #include "spentindex.h"
-=======
->>>>>>> e1fa952678c607319cbb4f21abe14ff1b4eec826
 #include "amount.h"
 #include "coins.h"
 #include "indirectmap.h"
