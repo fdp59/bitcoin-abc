@@ -96,8 +96,8 @@ void TxToJSONExpanded(const Config &config, const CTransaction& tx, const uint25
             CSpentIndexValue spentInfo;
             CSpentIndexKey spentKey(txin.prevout.hash, txin.prevout.n);
             if (GetSpentIndex(spentKey, spentInfo)) {
-                in.push_back(Pair("value", ValueFromAmount(Amount(spentInfo.satoshis))));
-                in.push_back(Pair("valueSat", spentInfo.satoshis));
+                in.push_back(Pair("value", ValueFromAmount(spentInfo.satoshis)));
+                in.push_back(Pair("valueSat", spentInfo.satoshis.ToString()));
                 if (spentInfo.addressType == 1) {
                     in.push_back(Pair("address", CBitcoinAddress(CKeyID(spentInfo.addressHash)).ToString()));
                 } else if (spentInfo.addressType == 2)  {

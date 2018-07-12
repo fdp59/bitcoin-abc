@@ -14,7 +14,7 @@
 #include <type_traits>
 
 /** Amount in satoshis (Can be negative) */
-typedef int64_t CAmount;
+//typedef int64_t Amount;
 
 struct Amount {
 private:

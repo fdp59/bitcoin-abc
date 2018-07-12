@@ -151,7 +151,7 @@ UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
                     } else {
                         continue;
                     }
-                    delta.push_back(Pair("satoshis", -1 * spentInfo.satoshis));
+                    delta.push_back(Pair("satoshis", (-spentInfo.satoshis).ToString()));
                     delta.push_back(Pair("index", (int)j));
                     delta.push_back(Pair("prevtxid", input.prevout.hash.GetHex()));
                     delta.push_back(Pair("prevout", (int)input.prevout.n));

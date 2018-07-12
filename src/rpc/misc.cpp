@@ -746,9 +746,9 @@ UniValue getaddressmempool(const Config &config, const JSONRPCRequest& request)
         delta.push_back(Pair("address", address));
         delta.push_back(Pair("txid", it->first.txhash.GetHex()));
         delta.push_back(Pair("index", (int)it->first.index));
-        delta.push_back(Pair("satoshis", it->second.amount));
+        delta.push_back(Pair("satoshis", it->second.amount.ToString()));
         delta.push_back(Pair("timestamp", it->second.time));
-        if (it->second.amount < 0) {
+        if (it->second.amount < Amount(0)) {
             delta.push_back(Pair("prevtxid", it->second.prevhash.GetHex()));
             delta.push_back(Pair("prevout", (int)it->second.prevout));
         }
@@ -826,7 +826,7 @@ UniValue getaddressutxos(const Config &config, const JSONRPCRequest& request)
         output.push_back(Pair("txid", it->first.txhash.GetHex()));
         output.push_back(Pair("outputIndex", (int)it->first.index));
         output.push_back(Pair("script", HexStr(it->second.script.begin(), it->second.script.end())));
-        output.push_back(Pair("satoshis", it->second.satoshis));
+        output.push_back(Pair("satoshis", it->second.satoshis.ToString()));
         output.push_back(Pair("height", it->second.blockHeight));
         utxos.push_back(output);
     }
@@ -906,7 +906,7 @@ UniValue getaddressdeltas(const Config &config, const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
+    std::vector<std::pair<CAddressIndexKey, Amount> > addressIndex;
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
         if (start > 0 && end > 0) {
@@ -922,14 +922,14 @@ UniValue getaddressdeltas(const Config &config, const JSONRPCRequest& request)
 
     UniValue deltas(UniValue::VARR);
 
-    for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+    for (std::vector<std::pair<CAddressIndexKey, Amount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
         std::string address;
         if (!getAddressFromIndex(it->first.type, it->first.hashBytes, address)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown address type");
         }
 
         UniValue delta(UniValue::VOBJ);
-        delta.push_back(Pair("satoshis", it->second));
+        delta.push_back(Pair("satoshis", it->second.ToString()));
         delta.push_back(Pair("txid", it->first.txhash.GetHex()));
         delta.push_back(Pair("index", (int)it->first.index));
         delta.push_back(Pair("blockindex", (int)it->first.txindex));
@@ -999,7 +999,7 @@ UniValue getaddressbalance(const Config &config, const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
+    std::vector<std::pair<CAddressIndexKey, Amount> > addressIndex;
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
         if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
@@ -1007,19 +1007,19 @@ UniValue getaddressbalance(const Config &config, const JSONRPCRequest& request)
         }
     }
 
-    CAmount balance = 0;
-    CAmount received = 0;
+    Amount balance = Amount(0);
+    Amount received = Amount(0);
 
-    for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
-        if (it->second > 0) {
+    for (std::vector<std::pair<CAddressIndexKey, Amount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+        if (it->second > Amount(0)) {
             received += it->second;
         }
         balance += it->second;
     }
 
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("balance", balance));
-    result.push_back(Pair("received", received));
+    result.push_back(Pair("balance", balance.ToString()));
+    result.push_back(Pair("received", received.ToString()));
 
     return result;
 
@@ -1068,7 +1068,7 @@ UniValue getaddresstxids(const Config &config, const JSONRPCRequest& request)
         }
     }
 
-    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
+    std::vector<std::pair<CAddressIndexKey, Amount> > addressIndex;
 
     for (std::vector<std::pair<uint160, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
         if (start > 0 && end > 0) {
@@ -1085,7 +1085,7 @@ UniValue getaddresstxids(const Config &config, const JSONRPCRequest& request)
     std::set<std::pair<int, std::string> > txids;
     UniValue result(UniValue::VARR);
 
-    for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
+    for (std::vector<std::pair<CAddressIndexKey, Amount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
         int height = it->first.blockHeight;
         std::string txid = it->first.txhash.GetHex();
 
