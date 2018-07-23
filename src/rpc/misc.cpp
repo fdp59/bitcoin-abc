@@ -1018,8 +1018,8 @@ UniValue getaddressbalance(const Config &config, const JSONRPCRequest& request)
     }
 
     UniValue result(UniValue::VOBJ);
-    result.push_back(Pair("balance", balance.ToString()));
-    result.push_back(Pair("received", received.ToString()));
+    result.push_back(Pair("balance", balance.GetSatoshis()));
+    result.push_back(Pair("received", received.GetSatoshis()));
 
     return result;
 
